@@ -9,7 +9,7 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || 'YOUR_TELEGRAM_BOT_
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'YOUR_OPENAI_API_KEY';
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
 
-const BASE_INSTRUCTIONS = `Ты — AI-ассистент частного психолога. Твоя задача — мягко сопровождать клиента от первого сообщения до записи на консультацию или курс.
+const BASE_INSTRUCTIONS = `Ты — AI-ассистент психолога Дмитрия Макаровского. Твоя задача — мягко сопровождать клиента от первого сообщения до записи на консультацию или курс.
 
 Запрещено:
 - Повторять приветствие после первого сообщения.

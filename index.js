@@ -1,6 +1,5 @@
-const express = require('express');
-const bodyParser = require('body-parser');
-const fetch = require('node-fetch');
+import express from 'express';
+import bodyParser from 'body-parser';
 
 const app = express();
 app.use(bodyParser.json());
@@ -9,23 +8,16 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || 'YOUR_TELEGRAM_BOT_
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'YOUR_OPENAI_API_KEY';
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
 
-const BASE_INSTRUCTIONS = `Ты — AI-ассистент частного психолога. Твоя задача — спокойно, чётко, по-человечески вести клиента от первого сообщения до записи на консультацию или курс.
-
-Ты не просто разговариваешь — ты помогаешь клиенту:
-— разобраться, какой формат ему подходит (разовая консультация, диагностика, курс),
-— сориентироваться по оплате (номер карты, телефона, QR — по запросу),
-— выбрать подходящее время встречи (будни, 10:00 / 12:00 / 14:00),
-— сделать это мягко и без давления.
+const BASE_INSTRUCTIONS = `Ты — AI-ассистент частного психолога. Твоя задача — мягко, спокойно, без давления сопровождать клиента от первого сообщения до записи на консультацию или курс.
 
 Правила:
-1. Приветствие допустимо ТОЛЬКО в самом первом сообщении.
-2. Больше НИКОГДА не используй «Здравствуйте», «Привет» и т.п.
-3. Никогда не пиши «Цель клиента: …» — даже в конце.
-4. Не повторяй одно и то же, строй ответ с учётом контекста последних сообщений.
-5. Всегда отвечай как живой, тёплый ассистент.`;
+1. Приветствие допустимо ТОЛЬКО в первом сообщении.
+2. После этого приветствия ЗАПРЕЩЕНЫ.
+3. Запрещено писать «Цель клиента: …»
+4. Не повторяй уже сказанное.
+5. Общайся как человек.`;
 
-// Память на 10 сообщений + стадия (initial → active)
-const memory = {}; // { chatId: { stage: 'initial' | 'active', messages[] } }
+const memory = {};
 
 function getSession(chatId) {
   if (!memory[chatId]) memory[chatId] = { stage: 'initial', messages: [] };
@@ -64,6 +56,7 @@ async function getAIResponse(chatId, userMessage) {
   const stageInstruction = session.stage === 'initial'
     ? 'Ты можешь поприветствовать, если это первое сообщение.'
     : 'Не используй приветствие. Продолжай диалог.';
+
   const messages = [
     { role: 'system', content: BASE_INSTRUCTIONS + '\n' + stageInstruction },
     ...session.messages

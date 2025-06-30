@@ -9,18 +9,33 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || 'YOUR_TELEGRAM_BOT_
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'YOUR_OPENAI_API_KEY';
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
 
-// === ЖЁСТКАЯ СИСТЕМНАЯ ИНСТРУКЦИЯ ===
-const INSTRUCTIONS = `# Роль: AI-ассистент психолога
-Ты — AI-ассистент частного психолога. Задача: мягко сопровождать клиента от первого обращения до записи на встречу.
+// === Инструкция для GPT-4 ===
+const BASE_INSTRUCTIONS = `Ты — AI-ассистент частного психолога. Задача: мягко и спокойно сопровождать клиента от первого обращения до записи на консультацию или курс.
 
-## Правила:
-1. Приветствие допустимо ТОЛЬКО в первом сообщении, если клиент первым написал "Здравствуйте", "Добрый день", "Привет" и т.п.
-2. В остальных ответах строго ЗАПРЕЩЕНО использовать любые приветствия.
-3. Фраза “Цель клиента:” ЗАПРЕЩЕНА в любом виде. Не включай её в сообщения.
-4. Храни контекст 10 последних сообщений (и клиента, и свои). Не повторяй то, что уже было сказано.
-5. Общайся как живой человек: спокойно, тепло, без шаблонов, без давления.`;
+❗ Правила:
+1. Приветствие допустимо ТОЛЬКО в первом сообщении, если клиент первым написал «Здравствуйте», «Добрый день» и т.п.
+2. Если ты уже приветствовал клиента — больше НЕ используй приветствие.
+3. Никогда не включай в сообщение фразу “Цель клиента: …”.
+4. Используй последние 10 сообщений (от клиента и свои), чтобы отвечать с учётом контекста.
+5. Не повторяй то, что уже обсуждалось. Будь живым, мягким, вежливым, но не формальным.`;
 
-// === Telegram-ответ
+// === Память на 10 сообщений + greeted флаг
+const memory = {}; // { [chatId]: { greeted: boolean, messages: [ { role, content } ] } }
+
+function getSession(chatId) {
+  if (!memory[chatId]) {
+    memory[chatId] = { greeted: false, messages: [] };
+  }
+  return memory[chatId];
+}
+
+function remember(chatId, role, content) {
+  const session = getSession(chatId);
+  session.messages.push({ role, content });
+  if (session.messages.length > 10) session.messages.shift();
+}
+
+// === Отправка в Telegram
 async function sendTelegramMessage(chatId, text) {
   await fetch(`${TELEGRAM_API}/sendMessage`, {
     method: 'POST',
@@ -29,27 +44,19 @@ async function sendTelegramMessage(chatId, text) {
   });
 }
 
-// === Память сообщений на 10 (сессия на chatId)
-const memory = {};
-
-function getSessionMessages(chatId) {
-  if (!memory[chatId]) memory[chatId] = [];
-  return memory[chatId];
-}
-
-function rememberMessage(chatId, role, content) {
-  const session = getSessionMessages(chatId);
-  session.push({ role, content });
-  if (session.length > 10) session.shift();
-}
-
 // === Получение ответа от GPT
 async function getAIResponse(chatId, userMessage) {
-  rememberMessage(chatId, 'user', userMessage);
+  const session = getSession(chatId);
+
+  remember(chatId, 'user', userMessage);
+
+  const greetingContext = session.greeted
+    ? 'Ты уже поздоровался ранее. Не начинай сообщение с приветствия.'
+    : 'Это первое сообщение. Если уместно, можешь поприветствовать клиента один раз.';
 
   const messages = [
-    { role: 'system', content: INSTRUCTIONS },
-    ...getSessionMessages(chatId)
+    { role: 'system', content: `${BASE_INSTRUCTIONS}\n\n${greetingContext}` },
+    ...session.messages
   ];
 
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -66,11 +73,17 @@ async function getAIResponse(chatId, userMessage) {
 
   const data = await res.json();
   const reply = data.choices?.[0]?.message?.content || 'Произошла ошибка при генерации ответа.';
-  rememberMessage(chatId, 'assistant', reply);
+  remember(chatId, 'assistant', reply);
+
+  // Если в ответе GPT есть приветствие — ставим флаг
+  if (/(здравствуй|добрый день|привет)/i.test(reply)) {
+    session.greeted = true;
+  }
+
   return reply;
 }
 
-// === Обработка Webhook
+// === Обработка Telegram webhook
 app.post('/webhook', async (req, res) => {
   const message = req.body?.message;
   if (!message) return res.sendStatus(200);
@@ -82,8 +95,8 @@ app.post('/webhook', async (req, res) => {
     const reply = await getAIResponse(chatId, userMessage);
     await sendTelegramMessage(chatId, reply);
   } catch (err) {
-    console.error(err);
-    await sendTelegramMessage(chatId, 'Произошла ошибка. Попробуйте ещё раз позже.');
+    console.error('Ошибка:', err);
+    await sendTelegramMessage(chatId, 'Произошла ошибка. Попробуйте позже.');
   }
 
   res.sendStatus(200);
@@ -92,5 +105,5 @@ app.post('/webhook', async (req, res) => {
 // === Запуск
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 AI-психолог запущен на порту ${PORT}`);
+  console.log(`🚀 AI-ассистент работает на порту ${PORT}`);
 });
